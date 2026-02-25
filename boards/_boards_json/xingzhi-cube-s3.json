@@ -1,0 +1,57 @@
+{
+  "name": "Xingzhi Cube S3",
+  "vendor": "Custom",
+  "url": "https://github.com/microrobotics/ESP32-S3-N16R8",
+
+  "build": {
+    "core": "esp32",
+    "mcu": "esp32s3",
+    "variant": "pinouts",
+
+    "f_cpu": "240000000L",
+    "f_flash": "80000000L",
+    "flash_mode": "qio",
+
+    "arduino": {
+      "ldscript": "esp32s3_out.ld",
+      "partitions": "default_16MB.csv",
+      "memory_type": "qspi_opi"
+    },
+
+    "psram_type": "opi",
+
+    "extra_flags": [
+      "-DARDUINO_XINGZHI_CUBE_S3",
+      "-DBOARD_HAS_PSRAM",
+      "-DARDUINO_RUNNING_CORE=1",
+      "-DARDUINO_EVENT_RUNNING_CORE=1",
+      "-DARDUINO_USB_CDC_ON_BOOT",
+      "-DARDUINO_USB_MODE=1"
+    ],
+
+    "hwids": [
+      ["0x303A", "0x1001"]
+    ]
+  },
+
+  "upload": {
+    "flash_size": "16MB",
+    "maximum_size": 16777216,
+    "maximum_ram_size": 8519680,
+    "speed": 460800,
+    "require_upload_port": true
+  },
+
+  "connectivity": [
+    "wifi",
+    "bluetooth"
+  ],
+
+  "frameworks": [
+    "arduino"
+  ],
+
+  "debug": {
+    "openocd_target": "esp32s3.cfg"
+  }
+}
