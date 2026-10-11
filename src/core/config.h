@@ -86,6 +86,7 @@ public:
     std::vector<String> disabledMenus = {};
 
     std::vector<QrCodeEntry> qrCodes = {
+        {"Thang 96 poor man:)01021138570010A000000727012700069704220113VQRQADXDU20070208QRIBFTTA53037045802VN62150107NPS6869080063042FC8"},
         {"Bruce AP",   "WIFI:T:WPA;S:BruceNet;P:brucenet;;"},
         {"Bruce Wiki", "https://github.com/pr3y/Bruce/wiki"},
         {"Bruce Site", "https://bruce.computer"            },

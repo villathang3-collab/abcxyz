@@ -102,7 +102,7 @@ uint32_t rfTxFileCallback(cmd *c) {
     Argument filepathArg = cmd.getArgument("filepath");
     Argument hideDefaultUIArg = cmd.getArgument("hideDefaultUI");
     String filepath = filepathArg.getValue();
-    String hideDefaultUI = hideDefaultUIArg.getValue();
+    String hideDefaultUIStr = hideDefaultUIArg.getValue();
     filepath.trim();
 
     if (filepath.indexOf(".sub") == -1) {
@@ -120,7 +120,15 @@ uint32_t rfTxFileCallback(cmd *c) {
         return false;
     }
 
-    return txSubFile(fs, filepath, hideDefaultUI);
+    RfCodes data;
+    if (!readSubFile(fs, filepath, data)) {
+        serialDevice->println("Failed to read sub file");
+        return false;
+    }
+    
+    bool hideDefaultUI = (hideDefaultUIStr == "true");
+
+    return txSubFile(data, hideDefaultUI);
 }
 
 uint32_t rfTxBufferCallback(cmd *c) {
@@ -136,7 +144,14 @@ uint32_t rfTxBufferCallback(cmd *c) {
     f.close();
     free(txt);
 
-    bool r = txSubFile(&PSRamFS, tmpfilepath);
+    RfCodes data;
+    if(!readSubFile(&PSRamFS, tmpfilepath, data))
+    {
+        PSRamFS.remove(tmpfilepath);
+        return false;
+    }
+
+    bool r = txSubFile(data);
     PSRamFS.remove(tmpfilepath);
 
     return r;

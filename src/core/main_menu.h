@@ -18,6 +18,7 @@
 #include "core/menu_items/RFMenu.h"
 #include "core/menu_items/ScriptsMenu.h"
 #include "core/menu_items/WifiMenu.h"
+#include "menu_items/NaoyaMenu.h"
 #include <MenuItemInterface.h>
 class MainMenu {
 public:
@@ -29,6 +30,7 @@ public:
     FMMenu fmMenu;
     GpsMenu gpsMenu;
     BW16Menu bw16Menu;
+    NaoyaMenu naoyaMenu;
     IRMenu irMenu;
     NRF24Menu nrf24Menu;
     OthersMenu othersMenu;

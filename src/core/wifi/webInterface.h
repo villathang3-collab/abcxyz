@@ -1,5 +1,8 @@
 
 #include <AsyncTCP.h>
+#ifdef HTTP_ANY
+#undef HTTP_ANY
+#endif
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <SD.h>

@@ -2,6 +2,9 @@
 #define __EVIL_PORTAL_H__
 
 #include <DNSServer.h>
+#ifdef HTTP_ANY
+#undef HTTP_ANY
+#endif
 #include <ESPAsyncWebServer.h>
 #include <globals.h>
 

@@ -1,0 +1,6 @@
+{
+    "clangd.arguments": [
+        "--compile-commands-dir=/home/user/test-lab2/.cache/clangd",
+        "--query-driver=/tmp/.platformio/packages/toolchain-*/bin/*,/tmp/.platformio/packages/tool-*/bin/*"
+    ]
+}

@@ -10,6 +10,7 @@ MainMenu::MainMenu() {
     _menuItems.push_back(&ethernetMenu);
 #endif
     _menuItems.push_back(&rfMenu);
+    _menuItems.push_back(&naoyaMenu);
     _menuItems.push_back(&rfidMenu);
     _menuItems.push_back(&bw16Menu);
     _menuItems.push_back(&irMenu);

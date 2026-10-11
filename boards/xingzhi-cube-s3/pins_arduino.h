@@ -10,7 +10,7 @@
 #define ST7789_DRIVER
 #define USE_HSPI_PORT 1
 #define TFT_WIDTH 240
-#define TFT_HEIGHT 280
+#define TFT_HEIGHT 240
 
 #define TFT_IPS 1
 #define TFT_MOSI 10

@@ -1,87 +1,19 @@
 #include "nrf_jammer.h"
-#include "core/Translation.h"
 #include "core/display.h"
 #include "core/mykeyboard.h"
 #include "nrf_common.h"
 #include <globals.h>
 
-void super_jammer() {
-    // 1. Ép cứng chạy bằng giao thức SPI
-    NRF24_MODE mode = NRF_MODE_SPI; 
-
-    // 2. QUAN TRỌNG: Chờ người dùng thả nút Select ra trước khi chạy tiếp
-    // Lệnh này đảm bảo ngón tay bạn đã nhấc khỏi nút bấm, tránh bị văng ngay lập tức
-    vTaskDelay(300 / portTICK_PERIOD_MS); 
-    while (check(SelPress)) {
-        vTaskDelay(10 / portTICK_PERIOD_MS);
-    }
-
-    byte hopping_channel[] = {32, 34, 46, 48, 50, 52, 0,  1,  2,  4,  6,  8,
-                              22, 24, 26, 28, 30, 74, 76, 78, 80, 82, 84, 86};
-    byte ptr_hop = 0;
-
-    // 3. Khởi tạo module NRF24
-    if (nrf_start(mode)) {
-        
-        NRFradio.setPALevel(RF24_PA_MAX);
-        NRFradio.startConstCarrier(RF24_PA_MAX, 45);
-        NRFradio.setAddressWidth(5); 
-        NRFradio.setPayloadSize(2);
-        if (!NRFradio.setDataRate(RF24_2MBPS)) {}
-
-        // 4. Vẽ giao diện
-        drawMainBorder();
-        tft.setCursor(10, 35);
-        tft.setTextSize(FM);
-        tft.setTextColor(bruceConfig.priColor);
-        tft.println(Translation::tr("BLE Jammer")); 
-
-        tft.setCursor(10, 70);
-        tft.println(Translation::tr("Status: Active")); 
-
-        tft.setCursor(10, 95);
-        tft.println(Translation::tr("Select to stop!")); // Nhấn Select để dừng
-
-        // 5. Vòng lặp chính: Sẽ chỉ thoát khi bạn bấm nút Select LẦN NỮA
-        while (!check(SelPress)) {
-            ptr_hop++;
-            if (ptr_hop >= sizeof(hopping_channel)) ptr_hop = 0; 
-
-            NRFradio.setChannel(hopping_channel[ptr_hop]); 
-            delayMicroseconds(150); // Delay tối thiểu để chip khóa PLL
-        }
-
-        // 6. Dọn dẹp sóng khi thoát
-        NRFradio.stopConstCarrier();
-        
-        // Chờ người dùng thả nút Select ra lần nữa để không bị nhảy bậy khi về Menu
-        while (check(SelPress)) {
-            vTaskDelay(10 / portTICK_PERIOD_MS);
-        }
-
-    } else {
-        // --- NẾU LỖI SPI, BÁO LÊN MÀN HÌNH ---
-        tft.fillScreen(bruceConfig.bgColor);
-        tft.setCursor(10, 30);
-        tft.setTextSize(FM);
-        tft.setTextColor(TFT_RED);
-        tft.println(Translation::tr("NRF24 not found"));
-        tft.println("Check SPI Pins!");
-        vTaskDelay(1500 / portTICK_PERIOD_MS);
-    }
-}
-
 void nrf_jammer() {
     int OnX = 0;
     NRF24_MODE mode = nrf_setMode();
     int NRFOnline = 1;
-    bool isPaused = false; // Biến trạng thái tạm dừng
-
+    
     byte Test_channels[] = {50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78, 80, 2,  4,  6,  8,
                             10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48};
 
     byte wifi_channels[] = {2, 7, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57, 62, 67, 72, 77};
-
+    
     byte ble_channels[] = {2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
                            22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41};
 
@@ -95,7 +27,7 @@ void nrf_jammer() {
     byte usb_channels[] = {40, 50, 60};
     byte video_channels[] = {70, 75, 80};
     byte rc_channels[] = {1, 3, 5, 7};
-
+    
     byte full_channels[] = {1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,  16,
                             17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,  32,
                             33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,
@@ -110,17 +42,17 @@ void nrf_jammer() {
         byte *channels;
         size_t count;
     };
-
+    
     jamMode modes[] = {
-        {"Test        ", Test_channels,      sizeof(Test_channels) / sizeof(Test_channels[0])          },
-        {"WiFi        ", wifi_channels,      sizeof(wifi_channels) / sizeof(wifi_channels[0])          },
-        {"BLEch       ", ble_channels,       sizeof(ble_channels) / sizeof(ble_channels[0])            },
-        {"BLE Adv Pri ", ble_adv_priority,   sizeof(ble_adv_priority) / sizeof(ble_adv_priority[0])    },
-        {"Bluetooth   ", bluetooth_channels, sizeof(bluetooth_channels) / sizeof(bluetooth_channels[0])},
-        {"USB         ", usb_channels,       sizeof(usb_channels) / sizeof(usb_channels[0])            },
-        {"Video Stream", video_channels,     sizeof(video_channels) / sizeof(video_channels[0])        },
-        {"RC          ", rc_channels,        sizeof(rc_channels) / sizeof(rc_channels[0])              },
-        {"Full        ", full_channels,      sizeof(full_channels) / sizeof(full_channels[0])          }
+        {"Test        ", Test_channels,      sizeof(Test_channels)/sizeof(Test_channels[0])},
+        {"WiFi        ", wifi_channels,      sizeof(wifi_channels)/sizeof(wifi_channels[0])},
+        {"BLEch       ", ble_channels,       sizeof(ble_channels)/sizeof(ble_channels[0])},
+        {"BLE Adv Pri ", ble_adv_priority,   sizeof(ble_adv_priority)/sizeof(ble_adv_priority[0])},
+        {"Bluetooth   ", bluetooth_channels, sizeof(bluetooth_channels)/sizeof(bluetooth_channels[0])},
+        {"USB         ", usb_channels,       sizeof(usb_channels)/sizeof(usb_channels[0])},
+        {"Video Stream", video_channels,     sizeof(video_channels)/sizeof(video_channels[0])},
+        {"RC          ", rc_channels,        sizeof(rc_channels)/sizeof(rc_channels[0])},
+        {"Full        ", full_channels,      sizeof(full_channels)/sizeof(full_channels[0])}
     };
 
     if (nrf_start(mode)) {
@@ -128,13 +60,14 @@ void nrf_jammer() {
         int modeIndex = 0;
         int hopIndex = 0;
         bool redraw = true;
-
         if (CHECK_NRF_SPI(mode)) {
             NRFradio.setPALevel(RF24_PA_MAX);
             NRFradio.startConstCarrier(RF24_PA_MAX, 50);
             NRFradio.setAddressWidth(5);
             NRFradio.setPayloadSize(2);
-            if (!NRFradio.setDataRate(RF24_2MBPS)) {}
+            if (!NRFradio.setDataRate(RF24_2MBPS)) {
+                // Optionally log error or handle failure
+            }
         }
 
         drawMainBorder();
@@ -142,20 +75,7 @@ void nrf_jammer() {
         NRFSerial.println("RADIOS");
         vTaskDelay(50 / portTICK_PERIOD_MS);
 
-        while (!check(EscPress)) {
-
-            if (check(SelPress)) {
-                isPaused = !isPaused;
-                redraw = true;
-
-                if (isPaused) {
-                    if (CHECK_NRF_SPI(mode)) NRFradio.stopConstCarrier();
-                    if ((CHECK_NRF_UART(mode)) || (CHECK_NRF_BOTH(mode))) { NRFSerial.println("OFF"); }
-                } else {
-                    if (CHECK_NRF_SPI(mode)) NRFradio.startConstCarrier(RF24_PA_MAX, 50);
-                }
-                vTaskDelay(200 / portTICK_PERIOD_MS);
-            }
+        while (!check(SelPress)) {
 
             if ((CHECK_NRF_UART(mode)) || (CHECK_NRF_BOTH(mode))) {
 
@@ -169,57 +89,37 @@ void nrf_jammer() {
                     incomingNRFs.trim();
                     if (incomingNRFs.length() == 1 && isDigit(incomingNRFs.charAt(0))) {
                         OnX = 1;
-                        NRFOnline = (incomingNRFs.toInt());
-                        if (CHECK_NRF_BOTH(mode)) { NRFOnline = (incomingNRFs.toInt()) + 1; }
+                            NRFOnline = (incomingNRFs.toInt());
+                        if (CHECK_NRF_BOTH(mode)) {
+                            NRFOnline = (incomingNRFs.toInt()) + 1;
+                        }
                         redraw = true;
                     }
                 }
             }
 
             if (redraw) {
-                // --- PHẦN SỬA LỖI ĐÈ CHỮ ---
-                tft.setTextSize(FM);
-
-                // 1. Tiêu đề
                 tft.setCursor(10, 35);
+                tft.setTextSize(FM);
                 tft.println("NRF X Jammer");
-
-                // 2. STATUS (Đặt tọa độ cố định Y=65 và Xóa nền trước khi in)
-                // Khoảng cách từ 35 -> 65 là đủ rộng cho tiêu đề
-                tft.fillRect(10, 65, tftWidth - 20, 25, bruceConfig.bgColor);
-                tft.setCursor(10, 65);
-
-                String statusStr = isPaused ? " PAUSED" : " ACTIVE";
-                if (isPaused) tft.setTextColor(TFT_YELLOW); // Đổi màu vàng cho dễ thấy pause
-                else tft.setTextColor(bruceConfig.priColor);
-
-                tft.println("STATUS : " + String(NRFOnline) + statusStr);
-
-                tft.setTextColor(bruceConfig.priColor); // Trả về màu gốc
-
-                // 3. MODE (Đặt tọa độ cố định Y=100 và Xóa nền trước khi in)
-                // Khoảng cách từ 65 -> 100 là 35 pixel (thoải mái không bị đè)
-                tft.fillRect(10, 100, tftWidth - 20, 25, bruceConfig.bgColor);
+                tft.setCursor(10, tft.getCursorY() + 25);
+                tft.println("STATUS : " + String(NRFOnline) + " ACTIVE");
                 tft.setCursor(10, 100);
+                tft.fillRect(10, 100, tftWidth - 20, FM * LH, bruceConfig.bgColor);
                 tft.print("MODE : " + String(modes[modeIndex].name));
-
-                // Vẽ khung
                 tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, bruceConfig.priColor);
-
-                if (!isPaused && ((CHECK_NRF_UART(mode)) || (CHECK_NRF_BOTH(mode)))) {
+                if ((CHECK_NRF_UART(mode)) || (CHECK_NRF_BOTH(mode))) {
                     String Mode = modes[modeIndex].name;
-                    Mode.replace(" ", "");
+                    Mode.replace(" " ,"");
                     NRFSerial.println(Mode);
                 }
                 redraw = false;
                 vTaskDelay(200 / portTICK_PERIOD_MS);
             }
 
-            if (!isPaused) {
-                hopIndex++;
-                if (hopIndex >= modes[modeIndex].count) hopIndex = 0;
-                if (CHECK_NRF_SPI(mode)) { NRFradio.setChannel(modes[modeIndex].channels[hopIndex]); }
-            }
+            hopIndex++;
+            if (hopIndex >= modes[modeIndex].count) hopIndex = 0;
+            if (CHECK_NRF_SPI(mode)) { NRFradio.setChannel(modes[modeIndex].channels[hopIndex]); }
 
             if (check(NextPress)) {
                 modeIndex++;
@@ -236,13 +136,16 @@ void nrf_jammer() {
         }
 
         if (CHECK_NRF_SPI(mode)) NRFradio.stopConstCarrier();
-        if ((CHECK_NRF_UART(mode)) || (CHECK_NRF_BOTH(mode))) { NRFSerial.println("OFF"); }
+        if ((CHECK_NRF_UART(mode)) || (CHECK_NRF_BOTH(mode))) {
+             NRFSerial.println("OFF");
+        }
 
     } else {
         displayError("NRF24 not found");
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
+
 void nrf_channel_jammer() {
     int OnX = 0;
     NRF24_MODE mode = nrf_setMode();
@@ -257,8 +160,9 @@ void nrf_channel_jammer() {
             NRFradio.startConstCarrier(RF24_PA_MAX, channel);
             NRFradio.setAddressWidth(3);
             NRFradio.setPayloadSize(2);
-            if (!NRFradio.setDataRate(RF24_2MBPS))
-                ;
+            if (!NRFradio.setDataRate(RF24_2MBPS)) {
+                // Optionally log error or handle failure
+            }
             NRFSPI = 1;
         }
 
@@ -279,7 +183,9 @@ void nrf_channel_jammer() {
                     if (incomingNRFs.length() == 1 && isDigit(incomingNRFs.charAt(0))) {
 
                         NRFOnline = (incomingNRFs.toInt());
-                        if (CHECK_NRF_BOTH(mode)) { NRFOnline = (incomingNRFs.toInt()) + NRFSPI; }
+                        if (CHECK_NRF_BOTH(mode)) {
+                            NRFOnline = (incomingNRFs.toInt()) + NRFSPI;
+                        }
                         redraw = true;
                         OnX = 1;
                     }
@@ -290,21 +196,17 @@ void nrf_channel_jammer() {
                 int freq = 2400 + channel;
                 tft.setCursor(10, 35);
                 tft.setTextSize(FM);
-                tft.println(Translation::tr("NRF Channel Jammer"));
-                
+                tft.println("NRF Channel Jammer");
                 tft.setCursor(10, tft.getCursorY() + 25);
-                tft.println(Translation::tr("STATUS : ") + String(NRFOnline) + Translation::tr(" ACTIVE"));
-                
+                tft.println("STATUS : " + String(NRFOnline) + " ACTIVE");
                 tft.fillRect(10, 100, tftWidth - 20, FM * LH, bruceConfig.bgColor);
                 tft.setCursor(10, 100);
-                tft.print(Translation::tr("MODE : CH ") + String(channel));
-                
+                tft.print("MODE : CH " + String(channel));
                 tft.setCursor(10, 116);
                 tft.fillRect(10, 116, tftWidth - 20, FM * LH, bruceConfig.bgColor);
-                tft.printf("%s%d%s", Translation::tr("Freq : ").c_str(), freq, Translation::tr(" MHz").c_str());
-                
+                tft.printf("Freq : %d MHz", freq);
                 if (CHECK_NRF_UART(mode) || CHECK_NRF_BOTH(mode)) {
-                    NRFSerial.println("CH_" + String(channel));
+                     NRFSerial.println("CH_"+String(channel));
                 }
                 tft.drawRoundRect(5, 5, tftWidth - 10, tftHeight - 10, 5, bruceConfig.priColor);
                 redraw = false;
@@ -335,10 +237,12 @@ void nrf_channel_jammer() {
         }
 
         if (CHECK_NRF_SPI(mode)) NRFradio.stopConstCarrier();
-        if (CHECK_NRF_UART(mode) || CHECK_NRF_BOTH(mode)) { NRFSerial.println("OFF"); }
+        if (CHECK_NRF_UART(mode) || CHECK_NRF_BOTH(mode)) {
+            NRFSerial.println("OFF");
+        }
 
     } else {
-        displayError(Translation::tr("NRF24 not found"));
+        displayError("NRF24 not found");
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
@@ -349,7 +253,7 @@ void nrf_channel_hopper() {
     uint8_t NRFSPI = 0;
 
     if (!nrf_start(mode)) {
-        displayError(Translation::tr("NRF24 not found"));
+        displayError("NRF24 not found");
         vTaskDelay(100 / portTICK_PERIOD_MS);
         return;
     }
@@ -357,8 +261,9 @@ void nrf_channel_hopper() {
     if (CHECK_NRF_SPI(mode)) {
         NRFradio.setPALevel(RF24_PA_MAX);
         NRFradio.startConstCarrier(RF24_PA_MAX, 50);
-        if (!NRFradio.setDataRate(RF24_2MBPS))
-            ;
+        if (!NRFradio.setDataRate(RF24_2MBPS)) {
+            // Optionally log error or handle failure
+        }
         NRFSPI = 1;
     }
 
@@ -384,7 +289,9 @@ void nrf_channel_hopper() {
                 incomingNRFs.trim();
                 if (incomingNRFs.length() == 1 && isDigit(incomingNRFs.charAt(0))) {
                     NRFOnline = (incomingNRFs.toInt());
-                    if (CHECK_NRF_BOTH(mode)) { NRFOnline = (incomingNRFs.toInt()) + NRFSPI; }
+                    if (CHECK_NRF_BOTH(mode)) {
+                         NRFOnline = (incomingNRFs.toInt()) + NRFSPI;
+                    }
                     redraw = true;
                 }
             }
@@ -394,22 +301,17 @@ void nrf_channel_hopper() {
             drawMainBorder();
             tft.setCursor(10, 35);
             tft.setTextSize(FM);
-            tft.println(Translation::tr("NRF Hopper Config"));
-            
+            tft.println("NRF Hopper Config");
             tft.setCursor(10, 70);
-            tft.printf("%s%d", Translation::tr("Start : CH ").c_str(), startChannel);
-            
+            tft.printf("Start : CH %d", startChannel);
             tft.setCursor(10, 90);
-            tft.printf("%s%d", Translation::tr("Stop  : CH ").c_str(), stopChannel);
-            
+            tft.printf("Stop  : CH %d", stopChannel);
             tft.setCursor(10, 110);
-            tft.printf("%s%d%s", Translation::tr("Step  : ").c_str(), stepSize, Translation::tr(" mhz").c_str());
-            
+            tft.printf("Step  : %d mhz", stepSize);
             tft.setCursor(10, 130);
-            tft.print(Translation::tr("Start Jammer"));
-            
+            tft.print("Start Jammer");
             tft.setCursor(10, 150);
-            tft.print(Translation::tr("Exit"));
+            tft.print("Exit");
 
             int yHighlight;
             if (menuIndex == 0) yHighlight = 70;
@@ -420,9 +322,7 @@ void nrf_channel_hopper() {
 
             tft.drawRect(5, yHighlight - 2, tftWidth - 10, 18, bruceConfig.priColor);
             if (CHECK_NRF_UART(mode) || CHECK_NRF_BOTH(mode)) {
-                NRFSerial.println(
-                    "HOPPER_" + String(startChannel) + "_" + String(stopChannel) + "_" + String(stepSize)
-                );
+                 NRFSerial.println("HOPPER_" + String(startChannel) + "_" + String(stopChannel) + "_" + String(stepSize));
             }
             redraw = false;
         }
@@ -476,24 +376,18 @@ void nrf_channel_hopper() {
         drawMainBorder();
         tft.setCursor(10, 35);
         tft.setTextSize(FM);
-        tft.println(Translation::tr("NRF Hopper Jammer"));
-        
+        tft.println("NRF Hopper Jammer");
         tft.setCursor(10, 70);
-        tft.println(Translation::tr("STATUS : ") + String(NRFOnline) + Translation::tr(" ACTIVE"));
-        
+        tft.println("STATUS : " + String(NRFOnline) + " ACTIVE");
         tft.setCursor(10, 90);
-        tft.printf("%s%d - %d", Translation::tr("Range : ").c_str(), startChannel, stopChannel);
-        
+        tft.printf("Range : %d - %d", startChannel, stopChannel);
         tft.setCursor(10, 110);
-        tft.printf("%s%d", Translation::tr("Step  : ").c_str(), stepSize);
+        tft.printf("Step  : %d", stepSize);
 
         while (!check(EscPress)) {
             channel += stepSize;
             if (channel > stopChannel) channel = startChannel;
-            if (CHECK_NRF_SPI(mode)) {
-                NRFradio.setChannel(channel);
-                delayMicroseconds(300); 
-            }
+            if (CHECK_NRF_SPI(mode)) NRFradio.setChannel(channel);
         }
 
         if (CHECK_NRF_SPI(mode)) NRFradio.stopConstCarrier();

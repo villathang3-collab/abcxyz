@@ -1,19 +1,10 @@
 #include "rf_scan.h"
-#include "core/Unifont16.h"
-#include "core/display.h"
 #include "core/led_control.h"
 #include "core/sd_functions.h"
 #include "core/type_convertion.h"
 #include "rf_send.h"
 #include <globals.h>
 #include <sstream>
-// Thêm đoạn này vào đầu file nếu chưa có
-#if TFT_WIDTH <= 135 && TFT_HEIGHT <= 240
-#include "core/Unifont12.h"
-#include "core/Unifont20.h"
-#endif
-// [THÊM] Thư viện dịch thuật
-#include "core/Translation.h"
 
 RFScan::RFScan() { setup(); }
 
@@ -129,7 +120,61 @@ bool RFScan::fast_scan() {
     return false;
 }
 
+void keeloq_identify(RfCodes &instance) {
+    FS *fs = NULL;
+
+    if (!getFsStorage(fs)) { return; }
+
+    KeeloqKeystore keystore{fs};
+
+    for (const auto &key : keystore.get_keys()) {
+        switch (key.type) {
+            case KEELOQ_SIMPLE_LEARNING: {
+                uint64_t decrypt = keeloq_decrypt(instance.encrypted, key.key);
+
+                if (instance.keeloq_check_decrypt(decrypt)) {
+                    instance.mf_name = key.mf_name;
+                    instance.hop = decrypt;
+
+                    return;
+                }
+
+                break;
+            }
+
+            case KEELOQ_NORMAL_LEARNING: {
+                uint64_t man = keeloq_normal_learning(instance.fix, key.key);
+                uint64_t decrypt = keeloq_decrypt(instance.encrypted, man);
+
+                if (instance.mf_name == "Centurion") {
+                    if (instance.keeloq_check_decrypt_centurion(decrypt)) {
+                        instance.hop = decrypt;
+
+                        return;
+                    }
+                }
+
+                if (instance.keeloq_check_decrypt(decrypt)) {
+                    instance.mf_name = key.mf_name;
+                    instance.hop = decrypt;
+
+                    return;
+                }
+
+                break;
+            }
+        }
+    }
+}
+
 void RFScan::read_rcswitch() {
+    received.fix = 0;
+    received.hop = 0;
+    received.btn = 0;
+    received.cnt = 0;
+    received.mf_name = "Unknown";
+    received.encrypted = 0;
+
     // Add decoded data only (if any) to the RCCode
     uint64_t decoded = rcswitch.getReceivedValue();
 
@@ -146,6 +191,17 @@ void RFScan::read_rcswitch() {
         received.Bit = rcswitch.getReceivedBitlength();
         received.filepath = "signal_" + String(signals);
         received.data = "";
+
+        if (rcswitch.getReceivedProtocol() == 23) {
+            uint64_t yek = reverse_bits(decoded, 64);
+
+            received.fix = yek >> 32;
+            received.btn = received.fix >> 28;
+            received.encrypted = yek & 0xFFFFFFFF;
+            received.serial = (yek >> 32) & 0xFFFFFFF;
+
+            keeloq_identify(received);
+        }
 
         frequency = 0;
         display_info(received, signals, ReadRAW, codesOnly, autoSave, title);
@@ -168,6 +224,14 @@ void RFScan::read_raw() {
     uint8_t repetition = 0;
 
     received.te = 0;
+
+    received.fix = 0;
+    received.hop = 0;
+    received.btn = 0;
+    received.cnt = 0;
+    received.mf_name = "Unknown";
+    received.encrypted = 0;
+
     for (transitions = 0; transitions < RCSWITCH_RAW_MAX_CHANGES; transitions++) {
         if (raw[transitions] == 0) break;
         if (transitions > 0) _data += " ";
@@ -203,6 +267,18 @@ void RFScan::read_raw() {
         received.indexed_durations = {};
         received.te = rcswitch.getReceivedDelay();
         received.Bit = rcswitch.getReceivedBitlength();
+
+        if (rcswitch.getReceivedProtocol() == 23) {
+            uint64_t yek = reverse_bits(decoded, 64);
+
+            received.fix = yek >> 32;
+            received.btn = received.fix >> 28;
+            received.encrypted = yek & 0xFFFFFFFF;
+            received.serial = (yek >> 32) & 0xFFFFFFF;
+
+            keeloq_identify(received);
+        }
+
         frequency = 0;
         display_info(received, signals, ReadRAW, codesOnly, autoSave, title);
     }
@@ -243,60 +319,56 @@ void RFScan::select_menu_option() {
 
     options = {};
 
-    // [DỊCH] Các tùy chọn Menu
-    if (received.protocol != "")
-        options.emplace_back(Translation::tr("Replay").c_str(), [this]() { set_option(REPLAY); });
+    if (received.protocol != "") options.emplace_back("Replay", [this]() { set_option(REPLAY); });
     if (received.data != "" && received.protocol != "RAW")
-        options.emplace_back(Translation::tr("Replay as RAW").c_str(), [this]() { set_option(REPLAY_RAW); });
+        options.emplace_back("Replay as RAW", [this]() { set_option(REPLAY_RAW); });
 
-    if (received.protocol != "")
-        options.emplace_back(Translation::tr("Save Signal").c_str(), [this]() { set_option(SAVE); });
+    if (received.protocol != "") options.emplace_back("Save Signal", [this]() { set_option(SAVE); });
     if (received.data != "" && received.protocol != "RAW")
-        options.emplace_back(Translation::tr("Save as RAW").c_str(), [this]() { set_option(SAVE_RAW); });
+        options.emplace_back("Save as RAW", [this]() { set_option(SAVE_RAW); });
 
-    if (received.protocol != "")
-        options.emplace_back(Translation::tr("Reset Signal").c_str(), [this]() { set_option(RESET); });
+    if (received.protocol != "") options.emplace_back("Reset Signal", [this]() { set_option(RESET); });
 
     if (bruceConfigPins.rfModule == CC1101_SPI_MODULE)
-        options.emplace_back(Translation::tr("Range").c_str(), [this]() { set_option(RANGE); });
+        options.emplace_back("Range", [this]() { set_option(RANGE); });
     if (bruceConfigPins.rfModule == CC1101_SPI_MODULE && !bruceConfigPins.rfFxdFreq)
-        options.emplace_back(Translation::tr("Threshold").c_str(), [this]() { set_option(THRESHOLD); });
+        options.emplace_back("Threshold", [this]() { set_option(THRESHOLD); });
 
     if (ReadRAW)
-        options.emplace_back(Translation::tr("Mode = RAW").c_str(), [&]() {
+        options.emplace_back("Mode = RAW", [&]() {
             ReadRAW = false;
             return select_menu_option();
         });
     else
-        options.emplace_back(Translation::tr("Mode = Decode").c_str(), [&]() {
+        options.emplace_back("Mode = Decode", [&]() {
             ReadRAW = true;
             return select_menu_option();
         });
 
     if (ReadRAW && codesOnly)
-        options.emplace_back(Translation::tr("Filter = Code").c_str(), [&]() {
+        options.emplace_back("Filter = Code", [&]() {
             codesOnly = false;
             return select_menu_option();
         });
     else if (ReadRAW)
-        options.emplace_back(Translation::tr("Filter = All").c_str(), [&]() {
+        options.emplace_back("Filter = All", [&]() {
             codesOnly = true;
             return select_menu_option();
         });
 
     if (autoSave)
-        options.emplace_back(Translation::tr("Save = Auto").c_str(), [&]() {
+        options.emplace_back("Save = Auto", [&]() {
             autoSave = false;
             return select_menu_option();
         });
     else
-        options.emplace_back(Translation::tr("Save = Manual").c_str(), [&]() {
+        options.emplace_back("Save = Manual", [&]() {
             autoSave = true;
             return select_menu_option();
         });
 
-    options.emplace_back(Translation::tr("Close Menu").c_str(), [this]() { set_option(CLOSE_MENU); });
-    options.emplace_back(Translation::tr("Main Menu").c_str(), [this]() { set_option(MAIN_MENU); });
+    options.emplace_back("Close Menu", [this]() { set_option(CLOSE_MENU); });
+    options.emplace_back("Main Menu", [this]() { set_option(MAIN_MENU); });
 
     loopOptions(options);
 }
@@ -326,9 +398,12 @@ void RFScan::set_option(RFMenuOption option) {
 void RFScan::replay_signal(bool asRaw) {
     String actualProtocol = received.protocol;
     if (asRaw) { received.protocol = "RAW"; }
+    displayTextLine("Sending..");
     sendRfCommand(received);
     addToRecentCodes(received);
     received.protocol = actualProtocol;
+
+    if (received.fix != 0 && !asRaw) { received.keeloq_step(1); }
 }
 
 void RFScan::save_signal(bool asRaw) {
@@ -346,113 +421,86 @@ void RFScan::reset_signals() {
     received.preset = "";
     received.protocol = "";
     signals = 0;
+    received.fix = 0;
+    received.hop = 0;
+    received.btn = 0;
+    received.cnt = 0;
+    received.mf_name = "Unknown";
+    received.encrypted = 0;
 }
 
 void RFScan::set_threshold() {
     options = {
-        {Translation::tr("(-55) More Accurate").c_str(), [&]() { rssiThreshold = -55; }},
-        {Translation::tr("(-60)").c_str(),               [&]() { rssiThreshold = -60; }},
-        {Translation::tr("(-65) Default ").c_str(),      [&]() { rssiThreshold = -65; }},
-        {Translation::tr("(-70)").c_str(),               [&]() { rssiThreshold = -70; }},
-        {Translation::tr("(-75)").c_str(),               [&]() { rssiThreshold = -75; }},
-        {Translation::tr("(-80) Less Accurate").c_str(), [&]() { rssiThreshold = -80; }},
+        {"(-55) More Accurate", [&]() { rssiThreshold = -55; }},
+        {"(-60)",               [&]() { rssiThreshold = -60; }},
+        {"(-65) Default ",      [&]() { rssiThreshold = -65; }},
+        {"(-70)",               [&]() { rssiThreshold = -70; }},
+        {"(-75)",               [&]() { rssiThreshold = -75; }},
+        {"(-80) Less Accurate", [&]() { rssiThreshold = -80; }},
     };
     loopOptions(options);
 }
+/*
+// Using similar function from rf_utils.h
+void RFScan::set_range() {
+    bool chooseFixedOpt = false;
 
-// ... (Đoạn set_range comment cũ giữ nguyên) ...
+    options = {
+        {String("Fxd [" + String(bruceConfigPins.rfFreq) + "]").c_str(),
+         [=]() { bruceConfigPins.setRfScanRange(bruceConfigPins.rfScanRange, 1); } },
+        {"Choose Fxd",                                                   [&]() { chooseFixedOpt = true; } },
+        {subghz_frequency_ranges[0],                                     [=]() {
+bruceConfigPins.setRfScanRange(0); }}, {subghz_frequency_ranges[1],                                     [=]()
+{ bruceConfigPins.setRfScanRange(1); }}, {subghz_frequency_ranges[2], [=]() {
+bruceConfigPins.setRfScanRange(2); }}, {subghz_frequency_ranges[3],                                     [=]()
+{ bruceConfigPins.setRfScanRange(3); }},
+    };
 
+    loopOptions(options);
+
+    if (chooseFixedOpt) { // Range
+        options.clear();
+        int ind = 0;
+        int arraySize = sizeof(subghz_frequency_list) / sizeof(subghz_frequency_list[0]);
+        for (int i = 0; i < arraySize; i++) {
+            String tmp = String(subghz_frequency_list[i], 2) + "Mhz";
+            options.emplace_back(tmp.c_str(), [=]() { bruceConfigPins.rfFreq = subghz_frequency_list[i]; });
+            if (int(frequency * 100) == int(subghz_frequency_list[i] * 100)) ind = i;
+        }
+        loopOptions(options, ind);
+        options.clear();
+        bruceConfigPins.setRfScanRange(bruceConfigPins.rfScanRange, 1);
+    }
+
+    if (bruceConfigPins.rfFxdFreq) displayTextLine("Scan freq set to " + String(bruceConfigPins.rfFreq));
+    else displayTextLine("Range set to " + String(subghz_frequency_ranges[bruceConfigPins.rfScanRange]));
+}
+*/
 void display_info(RfCodes received, int signals, bool ReadRAW, bool codesOnly, bool autoSave, String title) {
-// ==========================================
-// [MÀN HÌNH NHỎ] (Giữ nguyên)
-// ==========================================
-#if TFT_WIDTH <= 135 && TFT_HEIGHT <= 240
-    drawMainBorder();
-    if (title != "") {
-        setFont(FG);
-        tft.drawCentreString(Translation::tr(title), tftWidth / 2, 30);
-        tft.unloadFont();
-    }
-    if (received.protocol != "") display_signal_data(received);
-
-    tft.loadFont(Font16);
-    tft.setTextColor(getColorVariation(bruceConfig.priColor), bruceConfig.bgColor);
-
-    int yPos = 60;
-    int h = 20;
-
-    if (!ReadRAW) tft.drawString(Translation::tr("Rec: Only RCSwitch"), 10, yPos);
-    else if (codesOnly) tft.drawString(Translation::tr("Rec: RAW+CRC/RCSwitch"), 10, yPos);
-    else tft.drawString(Translation::tr("Rec: Any RAW signal"), 10, yPos);
-    yPos += h;
-
-    if (autoSave) {
-        tft.drawString(Translation::tr("Auto save: Enabled"), 10, yPos);
-        yPos += h;
-    }
-
-    String scanInfo = Translation::tr("Scan: ");
-    if (bruceConfigPins.rfFxdFreq) scanInfo += String(bruceConfigPins.rfFreq) + " MHz";
-    else scanInfo += String(subghz_frequency_ranges[bruceConfigPins.rfScanRange]);
-    tft.drawString(scanInfo, 10, yPos);
-    yPos += h;
-
-    tft.drawString(Translation::tr("Signals found: ") + String(signals), 10, yPos);
-
-    tft.loadFont(Font12);
-    tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
-    tft.drawString(Translation::tr("[NEXT] Options"), 10, tftHeight - 15);
-    tft.unloadFont();
-
-// ==========================================
-// [MÀN HÌNH TO] - ĐÃ DỊCH XUỐNG 18PX
-// ==========================================
-#else
-    // 1. Vẽ tiêu đề
-    if (title != "") drawMainBorderWithTitle(Translation::tr(title));
+    if (title != "") drawMainBorderWithTitle(title);
     else drawMainBorder();
 
-    // 2. Hiển thị data nếu có
     if (received.protocol != "") display_signal_data(received);
 
-    // 3. Cấu hình Font 16 (FM)
-    tft.loadFont(Font16);
     tft.setTextColor(getColorVariation(bruceConfig.priColor), bruceConfig.bgColor);
 
-    // [LOGIC MỚI] Tính toán vị trí và cộng thêm 18px như yêu cầu
-    int fontH = tft.fontHeight();
+    if (!ReadRAW) padprintln("Recording: Only RCSwitch codes.");
+    else if (codesOnly) padprintln("Recording: RAW with CRC or RCSwitch.");
+    else padprintln("Recording: Any RAW signal.");
 
-    // Công thức cũ: fontH * 2 + 5
-    // Công thức mới: (fontH * 2 + 5) + 18 = fontH * 2 + 23
-    int yPos = fontH * 2 + 23;
+    if (autoSave) padprintln("Auto save: Enabled");
 
-    int h = fontH + 4; // Khoảng cách dòng
+    if (bruceConfigPins.rfFxdFreq) padprintln("Scanning: " + String(bruceConfigPins.rfFreq) + " MHz");
+    else padprintln("Scanning: " + String(subghz_frequency_ranges[bruceConfigPins.rfScanRange]));
 
-    // Vẽ nội dung
-    if (!ReadRAW) tft.drawString(Translation::tr("Recording: Only RCSwitch codes."), 10, yPos);
-    else if (codesOnly) tft.drawString(Translation::tr("Recording: RAW with CRC or RCSwitch."), 10, yPos);
-    else tft.drawString(Translation::tr("Recording: Any RAW signal."), 10, yPos);
-    yPos += h;
+    padprintln("Total signals found: " + String(signals));
 
-    if (autoSave) {
-        tft.drawString(Translation::tr("Auto save: Enabled"), 10, yPos);
-        yPos += h;
-    }
-
-    String scanInfo = Translation::tr("Scanning: ");
-    if (bruceConfigPins.rfFxdFreq) scanInfo += String(bruceConfigPins.rfFreq) + " MHz";
-    else scanInfo += String(subghz_frequency_ranges[bruceConfigPins.rfScanRange]);
-
-    tft.drawString(scanInfo, 10, yPos);
-    yPos += h;
-
-    tft.drawString(Translation::tr("Total signals found: ") + String(signals), 10, yPos);
-
-    // Footer (Nút bấm)
     tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
-    tft.drawString(Translation::tr("Press [NEXT] for options."), 10, tftHeight - fontH - 10);
-#endif
+
+    padprintln("");
+    padprintln("Press [NEXT] for options.");
 }
+
 void display_signal_data(RfCodes received) {
     std::string txt = received.data.c_str();
     std::stringstream ss(txt);
@@ -462,44 +510,76 @@ void display_signal_data(RfCodes received) {
 
     while (ss >> palavra) transitions++;
 
-    // [DỊCH] Protocol
-    if (received.preset != "")
-        padprintln(
-            String(Translation::tr("Protocol")) + ": " + String(received.protocol) + "(" + received.preset +
-            ")"
-        );
-    else padprintln(String(Translation::tr("Protocol")) + ": " + String(received.protocol));
+    if (received.preset != "") {
+        if (received.fix != 0) {
+            padprintln("Protocol: KeeLoq");
+        } else padprintln("Protocol: " + String(received.protocol) + "(" + received.preset + ")");
+    } else padprintln("Protocol: " + String(received.protocol));
 
     if (received.key > 0) {
         decimalToHexString(received.key, hexString);
         if (received.protocol == "RAW") {
-            // [DỊCH] Lenght (giữ nguyên typo gốc của code nếu cần khớp dictionary, hoặc sửa cả 2)
-            // Trong lang_vi.h có "Lenght: " nên ta dùng đúng key đó
-            padprintln(
-                String(Translation::tr("Lenght: ")) + String(received.Bit) + Translation::tr(" transitions")
-            );
+            padprintln("Length: " + String(received.Bit) + " transitions");
             // tft.setCursor(tft.getCursorX(), tft.getCursorY() + 2);
-            padprintln(
-                String(Translation::tr("Record length: ")) + String(transitions) +
-                Translation::tr(" transitions")
-            );
+            padprintln("Record length: " + String(transitions) + " transitions");
         } else {
-            padprintln(String(Translation::tr("Lenght: ")) + String(received.Bit) + Translation::tr(" bits"));
-            const char *b = dec2binWzerofill(received.key, min(received.Bit, 40));
-            // tft.setCursor(tft.getCursorX(), tft.getCursorY() + 2);
-            padprintln(String(Translation::tr("Binary: ")) + String(b));
+            if (received.fix == 0) {
+                padprintln("Length: " + String(received.Bit) + " bits");
+                const char *b = dec2binWzerofill(received.key, min(received.Bit, 40));
+                // tft.setCursor(tft.getCursorX(), tft.getCursorY() + 2);
+                padprintln("Binary: " + String(b));
+            }
         }
     } else {
-        strcpy(hexString, Translation::tr("No code identified").c_str());
-        padprintln(String(Translation::tr("Lenght: ")) + Translation::tr("No code identified"));
-        padprintln(
-            String(Translation::tr("Record length: ")) + String(transitions) + Translation::tr(" transitions")
-        );
+        strcpy(hexString, "No code identified");
+        padprintln("Length: No code identified");
+        padprintln("Record length: " + String(transitions) + " transitions");
     }
 
-    if (received.protocol == "RAW") padprintln("CRC: " + String(hexString)); // CRC chưa có trong dict, để tạm
-    else padprintln(String(Translation::tr("Key: ")) + String(hexString));
+    if (received.protocol == "RAW") padprintln("CRC: " + String(hexString));
+    else {
+        if (received.fix != 0) {
+            padprintln("Manufacturer: " + received.mf_name);
 
+            decimalToHexString(received.serial, hexString);
+            padprintln("Serial: " + String(hexString));
+
+            padprintln("Btn: " + String(received.btn));
+
+            decimalToHexString(received.fix, hexString);
+            padprintln("Fix: " + String(hexString));
+
+            if (received.mf_name != "Unknown") {
+                decimalToHexString(received.hop, hexString);
+                padprintln("Hop: " + String(hexString));
+
+                padprintln("Counter: " + String(received.cnt));
+            } else {
+                decimalToHexString(received.encrypted, hexString);
+                padprintln("Encrypted: " + String(hexString));
+            }
+        } else {
+            padprintln("Key: " + String(hexString));
+        }
+    }
+
+    // if (bruceConfigPins.rfModule == CC1101_SPI_MODULE) {
+    //     int rssi = ELECHOUSE_cc1101.getRssi();
+    //     tft.drawPixel(0, 0, 0);
+    //     padprintln("Rssi: " + String(rssi));
+    // }
+
+    // if (!received.indexed_durations.empty()) {
+    //     padprint("PulseLenghts: ");
+    //     for (int i = 0; i < received.indexed_durations.size(); i++) {
+    //         if (i < received.indexed_durations.size() - 1)
+    //             tft.print(String(received.indexed_durations[i]) + "us, ");
+    //         else tft.println(String(received.indexed_durations[i]) + "us");
+    //     }
+    // } else if (received.te) padprintln("PulseLenght: " + String(received.te) + "us");
+    // else padprintln("PulseLenght: unknown");
+
+    // padprintln("Frequency: " + String(received.frequency) + " Hz");
     padprintln("");
 }
 
@@ -508,7 +588,7 @@ bool RCSwitch_SaveSignal(float frequency, RfCodes codes, bool raw, char *key, bo
     String filename = "";
 
     if (!getFsStorage(fs)) {
-        displayError(Translation::tr("No space left on device"), true);
+        displayError("No space left on device", true);
         return false;
     }
 
@@ -523,7 +603,18 @@ bool RCSwitch_SaveSignal(float frequency, RfCodes codes, bool raw, char *key, bo
         subfile_out += "Preset: " + String(codes.preset) + "\n";
         subfile_out += "Protocol: RcSwitch\n";
         subfile_out += "Bit: " + String(codes.Bit) + "\n";
-        subfile_out += "Key: " + String(key) + "\n";
+        if (codes.hop != 0) {
+            subfile_out += "Manufacturer: " + String(codes.mf_name) + "\n";
+            char hexString[64] = {0};
+
+            decimalToHexString(codes.serial, hexString);
+
+            subfile_out += "Serial: " + String(hexString) + "\n";
+            subfile_out += "Button: " + String(codes.btn) + "\n";
+            subfile_out += "Counter: " + String(codes.cnt) + "\n";
+        } else {
+            subfile_out += "Key: " + String(key) + "\n";
+        }
         subfile_out += "TE: " + String(codes.te) + "\n";
         filename = "rcs.sub";
         // subfile_out += "RAW_Data: " + codes.data;
@@ -549,7 +640,7 @@ bool RCSwitch_SaveSignal(float frequency, RfCodes codes, bool raw, char *key, bo
         file.println(subfile_out);
         if (!autoSave) displaySuccess(file.path());
     } else {
-        displayError(Translation::tr("Error saving file"), true);
+        displayError("Error saving file", true);
     }
 
     file.close();
@@ -560,7 +651,7 @@ String rf_scan(float start_freq, float stop_freq, int max_loops) {
     // derived from https://github.com/mcore1976/cc1101-tool/blob/main/cc1101-tool-esp32.ino#L480
 
     if (bruceConfigPins.rfModule != CC1101_SPI_MODULE) {
-        displayError(Translation::tr("rf scanning is available with CC1101 only"), true);
+        displayError("rf scanning is available with CC1101 only", true);
         return ""; // only CC1101 is supported for this
     }
     if (!initRfModule("rx", start_freq)) return "";
@@ -603,10 +694,10 @@ String rf_scan(float start_freq, float stop_freq, int max_loops) {
                     Serial.print(mark_freq);
                     Serial.print(F(" Rssi: "));
                     Serial.println(mark_rssi);
+                    out += String(mark_freq) + ",";
                     mark_rssi = -100;
                     compare_freq = 0;
                     mark_freq = 0;
-                    out += String(mark_freq) + ",";
                 } else {
                     compare_freq = mark_freq * 100;
                     freq = mark_freq - 0.10;
@@ -621,7 +712,7 @@ String rf_scan(float start_freq, float stop_freq, int max_loops) {
     return out;
 }
 
-String RCSwitch_Read(float frequency, int max_loops, bool raw) {
+String RCSwitch_Read(float frequency, int max_loops, bool raw, bool headless) {
     RCSwitch rcswitch = RCSwitch();
     RfCodes received;
 
@@ -630,15 +721,12 @@ String RCSwitch_Read(float frequency, int max_loops, bool raw) {
     char hexString[64];
 
 RestartRec:
-    drawMainBorder();
-    tft.setCursor(10, 28);
-    tft.setTextSize(FP);
-
-    // [DỊCH] Waiting message
-    // "Waiting for a " + freq + " MHz signal."
-    String msg =
-        String(Translation::tr("Waiting for a ")) + String(frequency) + " MHz " + Translation::tr(" signal.");
-    tft.println(msg);
+    if (!headless) {
+        drawMainBorder();
+        tft.setCursor(10, 28);
+        tft.setTextSize(FP);
+        tft.println("Waiting for a " + String(frequency) + " MHz " + "signal.");
+    }
 
     // init receive
     if (!initRfModule("rx", frequency)) return "";
@@ -649,11 +737,13 @@ RestartRec:
     } else {
         rcswitch.enableReceive(bruceConfigPins.rfRx);
     }
-    // ... (Phần còn lại của hàm RCSwitch_Read giữ nguyên, chỉ sửa logic hiển thị) ...
     while (!check(EscPress)) {
         if (rcswitch.available()) {
+            // Serial.println("Available");
             long value = rcswitch.getReceivedValue();
+            // Serial.println("getReceivedValue()");
             if (value) {
+                // Serial.println("has value");
                 unsigned int *_raw = rcswitch.getReceivedRawdata();
                 received.frequency = long(frequency * 1000000);
                 received.key = rcswitch.getReceivedValue();
@@ -662,27 +752,33 @@ RestartRec:
                 received.te = rcswitch.getReceivedDelay();
                 received.Bit = rcswitch.getReceivedBitlength();
                 received.filepath = "unsaved";
-
+                // Serial.println(received.te*2);
+                //  derived from https://github.com/sui77/rc-switch/tree/master/examples/ReceiveDemo_Advanced
                 received.data = "";
                 int sign = +1;
+                // if(received.preset.invertedSignal) sign = -1;
                 for (int i = 0; i < received.Bit * 2; i++) {
                     if (i > 0) received.data += " ";
                     if (i % 2 == 0) sign = +1;
                     else sign = -1;
                     received.data += String(sign * (int)_raw[i]);
                 }
+                // Serial.println(received.protocol);
+                // Serial.println(received.data);
                 decimalToHexString(received.key, hexString);
 
-                display_info(received, 1, raw);
+                if (!headless) display_info(received, 1, raw);
             }
             rcswitch.resetAvailable();
         }
         if (raw && rcswitch.RAWavailable()) {
-            vTaskDelay(100 / portTICK_PERIOD_MS);
+            // if no value were decoded, show raw data to be saved
+            vTaskDelay(100 / portTICK_PERIOD_MS); // give it time to process and store all signal
 
             unsigned int *_raw = rcswitch.getRAWReceivedRawdata();
             int transitions = 0;
             signed int sign = 1;
+            received.data = ""; // initialize BEFORE building (was wrongly placed after, wiping data)
             for (transitions = 0; transitions < RCSWITCH_RAW_MAX_CHANGES; transitions++) {
                 if (_raw[transitions] == 0) break;
                 if (transitions > 0) received.data += " ";
@@ -695,17 +791,24 @@ RestartRec:
                 received.protocol = "RAW";
                 received.preset = "0";
                 received.filepath = "unsaved";
-                received.data = "";
-
-                display_info(received, 1, raw);
+                // NOTE: do NOT clear received.data here - it was just built above
+                if (!headless) display_info(received, 1, raw);
+            } else {
+                received.data = ""; // too few transitions - discard
             }
+            // ResetSignal:
             rcswitch.resetAvailable();
         }
 
-        if (received.key > 0 || received.data.length() > 20) {
+        if (received.key > 0 ||
+            received.data.length() > 20) { // RAW data does not have "key", 20 is more than 5 transitions
+            // switch to raw mode if decoding failed
             if (received.preset == 0) {
                 Serial.println("signal decoding failed, switching to RAW mode");
+                // displayWarning("signal decoding failed, switching to RAW mode", true);
                 raw = true;
+                // TODO: show a dialog/warning?
+                // raw = yesNoDialog("decoding failed, save as RAW?");
             }
             String subfile_out = "Filetype: Bruce SubGhz File\nVersion 1\n";
             subfile_out += "Frequency: " + String(int(frequency * 1000000)) + "\n";
@@ -716,52 +819,35 @@ RestartRec:
                 subfile_out += "Key: " + String(hexString) + "\n";
                 subfile_out += "TE: " + String(received.te) + "\n";
             } else {
+                // save as raw
                 if (received.preset == "1") received.preset = "FuriHalSubGhzPresetOok270Async";
                 else if (received.preset == "2") received.preset = "FuriHalSubGhzPresetOok650Async";
                 subfile_out += "Preset: " + String(received.preset) + "\n";
                 subfile_out += "Protocol: RAW\n";
                 subfile_out += "RAW_Data: " + received.data;
             }
+            // headless mode
             return subfile_out;
-
-            if (check(SelPress)) {
-                int chosen = 0;
-                options = {
-                    {Translation::tr("Replay signal").c_str(), [&]() { chosen = 1; }},
-                    {Translation::tr("Save signal").c_str(),   [&]() { chosen = 2; }},
-                };
-                loopOptions(options);
-                if (chosen == 1) {
-                    rcswitch.disableReceive();
-                    sendRfCommand(received);
-                    addToRecentCodes(received);
-                    goto RestartRec;
-                } else if (chosen == 2) {
-                    decimalToHexString(received.key, hexString);
-                    RCSwitch_SaveSignal(frequency, received, raw, hexString);
-                    vTaskDelay(1000 / portTICK_PERIOD_MS);
-                    drawMainBorder();
-                    tft.setCursor(10, 28);
-                    tft.setTextSize(FP);
-                    // [DỊCH] Waiting message (again)
-                    tft.println(
-                        String(Translation::tr("Waiting for a ")) + String(frequency) + " MHz " +
-                        Translation::tr(" signal.")
-                    );
-                }
-            }
         }
         if (max_loops > 0) {
+            // headless mode, quit if nothing received after max_loops
+            vTaskDelay(1000 / portTICK_PERIOD_MS); // wait first, THEN check
             max_loops -= 1;
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
             if (max_loops == 0) {
-                Serial.println("timeout");
-                return "";
+                // Use sentinel -1: loop runs one more iteration to catch signals
+                // that arrived during vTaskDelay before giving up
+                max_loops = -1;
             }
+        } else if (max_loops == -1) {
+            // Final check already done in this iteration - truly timed out
+            Serial.println("timeout");
+            return "";
         }
     }
 Exit:
     vTaskDelay(1 / portTICK_PERIOD_MS);
+
     deinitRfModule();
+
     return "";
 }

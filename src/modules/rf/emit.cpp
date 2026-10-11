@@ -1,10 +1,8 @@
 #include "emit.h"
-#include "core/Translation.h"    // Thêm include Translation
 #include "modules/rf/rf_utils.h" // for initRfModule
 #include <ELECHOUSE_CC1101_SRC_DRV.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-
 // Global variables for shared state
 volatile bool outputState = false;
 volatile uint16_t rssiCount = 0;
@@ -22,16 +20,11 @@ void rf_raw_emit_draw(void *parameter) {
     tft.setCursor(20, 38);
     tft.setTextSize(FP);
     tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
-
-    // Bọc dịch cho chuỗi "Emitting: "
-    tft.print(Translation::tr("Emitting: "));
+    tft.print("Emitting: ");
     tft.print(frequency);
     tft.print(" MHz");
-
     tft.setTextColor(getColorVariation(bruceConfig.priColor), bruceConfig.bgColor);
-
-    // Bọc dịch cho chuỗi "   Press [OK] to stop "
-    tft.println(Translation::tr("   Press [OK] to stop "));
+    tft.println("   Press [OK] to stop ");
     tft.setTextColor(bruceConfig.priColor, bruceConfig.bgColor);
 
     while (1) {

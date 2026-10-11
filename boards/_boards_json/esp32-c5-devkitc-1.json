@@ -2,9 +2,10 @@
   "build": {
     "core": "esp32",
     "extra_flags": [
-        "-DESP32C5_DEVKITC_1",
-        "-DESP32C5"
-      ],
+      "-DESP32C5_WROOM_1",
+      "-DESP32C5",
+      "-DBOARD_HAS_PSRAM"
+    ],
     "f_cpu": "240000000L",
     "f_flash": "80000000L",
     "flash_mode": "qio",
@@ -22,14 +23,14 @@
     "arduino",
     "espidf"
   ],
-  "name": "Espressif ESP32-C5-DevKitC-1 8MB no PSRAM",
+  "name": "Espressif ESP32-C5-WROOM-1 N16R8",
   "upload": {
-    "flash_size": "8MB",
+    "flash_size": "16MB",
     "maximum_ram_size": 327680,
-    "maximum_size": 8388608,
+    "maximum_size": 16777216,
     "require_upload_port": true,
     "speed": 460800
   },
-  "url": "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/esp32-c5-devkitc-1/user_guide.html",
+  "url": "https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32c5/index.html",
   "vendor": "Espressif"
 }

@@ -1,6 +1,5 @@
 #include "nrf_common.h"
-#include "core/mykeyboard.h"
-#include "nrf_jammer.h"
+#include "../../core/mykeyboard.h"
 
 RF24 NRFradio(bruceConfigPins.NRF24_bus.io0, bruceConfigPins.NRF24_bus.cs);
 HardwareSerial NRFSerial = HardwareSerial(2); // Uses UART2 for External NRF's
@@ -90,11 +89,10 @@ bool nrf_start(NRF24_MODE mode) {
 NRF24_MODE nrf_setMode() {
     NRF24_MODE mode = NRF_MODE_DISABLED;
     options = {
-        {"SPI Mode",     [&]() { mode = NRF_MODE_SPI; } },
-        {"SPI UART",     [&]() { mode = NRF_MODE_UART; }},
-        {"SPI BOTH",     [&]() { mode = NRF_MODE_BOTH; }},
-        {"Super Jammer", [&]() { super_jammer(); }      },
-        {"Main Menu",    [=]() { returnToMenu = true; } }
+        {"SPI Mode",  [&]() { mode = NRF_MODE_SPI; } },
+        {"SPI UART",  [&]() { mode = NRF_MODE_UART; }},
+        {"SPI BOTH",  [&]() { mode = NRF_MODE_BOTH; }},
+        {"Main Menu", [=]() { returnToMenu = true; } }
     };
     loopOptions(options);
     return mode;

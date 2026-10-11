@@ -1,100 +1,88 @@
 #include "core/powerSave.h"
 #include "core/utils.h"
+#include <globals.h>
 #include <interface.h>
+#include <Wire.h> 
 
-/***************************************************************************************
-** Function name: _setup_gpio()
-** Location: main.cpp
-** Description:   initial setup for the device
-***************************************************************************************/
-void _setup_gpio() {
-
-    pinMode(TFT_CS, OUTPUT);
-    digitalWrite(TFT_CS, HIGH);
-    pinMode(TFT_MOSI, OUTPUT);
-    digitalWrite(TFT_MOSI, HIGH);
-    pinMode(TFT_SCLK, OUTPUT);
-
-    pinMode(TFT_BL, OUTPUT);
-    digitalWrite(TFT_BL, HIGH);
-    pinMode(TFT_RST, OUTPUT);
-    pinMode(TFT_DC, OUTPUT);
-    digitalWrite(TFT_DC, HIGH);
-
-#ifdef HAS_3_BUTTONS
-    pinMode(UP_BTN, INPUT_PULLUP); // Sets the power btn as an INPUT
-    pinMode(SEL_BTN, INPUT_PULLUP);
-    pinMode(DW_BTN, INPUT_PULLUP);
+#ifndef MINBRIGHT
+#define MINBRIGHT 1
 #endif
-    pinMode(NRF24_SS_PIN, OUTPUT);
-    pinMode(CC1101_SS_PIN, OUTPUT);
-    pinMode(SDCARD_CS, OUTPUT);
-    pinMode(W5500_SS_PIN, OUTPUT);
-    pinMode(TFT_CS, OUTPUT);
 
-    digitalWrite(NRF24_SS_PIN, HIGH);
-    digitalWrite(CC1101_SS_PIN, HIGH);
-    digitalWrite(SDCARD_CS, HIGH);
-    digitalWrite(W5500_SS_PIN, HIGH);
-    digitalWrite(TFT_CS, HIGH);
+// --- KHAI BÁO CẢM ỨNG THỦ CÔNG ---
+#ifdef HAS_TOUCH
+#define CST816_ADDR 0x15
+
+// Hàm tự viết để lấy cả Tọa độ X, Y và Cử chỉ (Gesture)
+bool getTouchData(int &x, int &y, uint8_t &gesture) {
+    Wire.beginTransmission(CST816_ADDR);
+    Wire.write(0x01); // Thanh ghi 0x01 chứa Gesture ID, 0x02 chứa Fingers...
+    if (Wire.endTransmission(false) != 0) return false; 
+
+    // Đọc 6 byte liên tục: Gesture, Fingers, Xh, Xl, Yh, Yl
+    Wire.requestFrom(CST816_ADDR, 6); 
+    if (Wire.available() >= 6) {
+        gesture = Wire.read();
+        uint8_t fingers = Wire.read();
+        uint8_t xh = Wire.read();
+        uint8_t xl = Wire.read();
+        uint8_t yh = Wire.read();
+        uint8_t yl = Wire.read();
+
+        if (fingers > 0) { 
+            x = ((xh & 0x0F) << 8) | xl;
+            y = ((yh & 0x0F) << 8) | yl;
+            return true;
+        }
+    }
+    return false; 
+}
+#endif
+// --------------------------------
+
+void _setup_gpio() {
+    // 1. Khóa toàn bộ các chân CS lên HIGH
+    pinMode(TFT_CS, OUTPUT);    digitalWrite(TFT_CS, HIGH);
+    pinMode(SDCARD_CS, OUTPUT); digitalWrite(SDCARD_CS, HIGH);
+    pinMode(CC1101_SS_PIN, OUTPUT); digitalWrite(CC1101_SS_PIN, HIGH);
+    pinMode(NRF24_SS_PIN, OUTPUT); digitalWrite(NRF24_SS_PIN, HIGH);
+    pinMode(W5500_SS_PIN, OUTPUT); digitalWrite(W5500_SS_PIN, HIGH);
+
+    // 2. Setup màn hình
+    pinMode(TFT_MOSI, OUTPUT);  digitalWrite(TFT_MOSI, HIGH);
+    pinMode(TFT_SCLK, OUTPUT);
+    pinMode(TFT_BL, OUTPUT);    digitalWrite(TFT_BL, HIGH);
+    pinMode(TFT_RST, OUTPUT);
+    pinMode(TFT_DC, OUTPUT);    digitalWrite(TFT_DC, HIGH);
+
 #ifdef ILI9341_DRIVER
     bruceConfig.colorInverted = 0;
 #endif
+
+    // 3. Khởi tạo màn hình
+    tft.init(); 
 }
-/***************************************************************************************
-** Function name: _post_setup_gpio()
-** Location: main.cpp
-** Description:   second stage gpio setup to make a few functions work
-***************************************************************************************/
+
 void _post_setup_gpio() {
 #ifdef HAS_TOUCH
-    pinMode(TOUCH_CS, OUTPUT);
-    uint16_t calData[5];
-    File caldata = LittleFS.open("/calData", "r");
+    Wire.begin(TOUCH_SDA, TOUCH_SCL);
+    Wire.setClock(400000); // 400kHz cho ổn định
 
-    if (!caldata) {
-        tft.setRotation(ROTATION);
-        tft.calibrateTouch(calData, TFT_WHITE, TFT_BLACK, 10);
+    // Gửi lệnh tắt chế độ Sleep tự động của CST816 (Theo code của bạn)
+    Wire.beginTransmission(CST816_ADDR);
+    Wire.write(0xFE); Wire.write(0x00); 
+    Wire.endTransmission();
 
-        caldata = LittleFS.open("/calData", "w");
-        if (caldata) {
-            caldata.printf(
-                "%d\n%d\n%d\n%d\n%d\n", calData[0], calData[1], calData[2], calData[3], calData[4]
-            );
-            caldata.close();
-        }
-    } else {
-        Serial.print("\ntft Calibration data: ");
-        for (int i = 0; i < 5; i++) {
-            String line = caldata.readStringUntil('\n');
-            calData[i] = line.toInt();
-            Serial.printf("%d, ", calData[i]);
-        }
-        Serial.println();
-        caldata.close();
-    }
-    tft.setTouch(calData);
+    Wire.beginTransmission(CST816_ADDR);
+    Wire.write(0xEE); Wire.write(0x00); 
+    Wire.endTransmission();
+
+    Serial.println("Raw CST816 Touch Init OK!");
 #endif
 }
 
-/***************************************************************************************
-** Function name: getBattery()
-** location: display.cpp
-** Description:   Delivers the battery value from 1-100
-***************************************************************************************/
 int getBattery() { return 0; }
-
-/***************************************************************************************
-** Function name: isCharging()
-** Description:   Default implementation that returns false
-***************************************************************************************/
 bool isCharging() { return false; }
 
-/*********************************************************************
-** Function: setBrightness
-** location: settings.cpp
-** set brightness value
-**********************************************************************/
 void _setBrightness(uint8_t brightval) {
     if (brightval == 0) {
         analogWrite(TFT_BL, brightval);
@@ -104,86 +92,52 @@ void _setBrightness(uint8_t brightval) {
     }
 }
 
-/*********************************************************************
-** Function: InputHandler
-** Handles the variables PrevPress, NextPress, SelPress, AnyKeyPress and EscPress
-**********************************************************************/
 void InputHandler(void) {
     static unsigned long tm = 0;
     if (millis() - tm < 200 && !LongPress) return;
+
 #ifdef HAS_TOUCH
-    TouchPoint t;
     checkPowerSaveTime();
-    bool _IH_touched = tft.getTouch(&t.x, &t.y);
-    if (_IH_touched) {
-        NextPress = false;
-        PrevPress = false;
-        UpPress = false;
-        DownPress = false;
-        SelPress = false;
-        EscPress = false;
-        AnyKeyPress = false;
-        NextPagePress = false;
-        PrevPagePress = false;
-        touchPoint.pressed = false;
-        _IH_touched = false;
-        Serial.printf("\nRAW: Touch Pressed on x=%d, y=%d", t.x, t.y);
-        if (bruceConfigPins.rotation == 3) {
-            t.y = (tftHeight + 20) - t.y;
-            t.x = tftWidth - t.x;
-        }
-        if (bruceConfigPins.rotation == 0) {
-            uint16_t tmp = t.x;
-            t.x = map((tftHeight + 20) - t.y, 0, 320, 0, 240);
-            t.y = map(tmp, 0, 240, 0, 320);
-        }
-        if (bruceConfigPins.rotation == 2) {
-            uint16_t tmp = t.x;
-            t.x = map(t.y, 0, 320, 0, 240);
-            t.y = map(tftWidth - tmp, 0, 240, 0, 320);
+    
+    int x, y;
+    uint8_t gesture;
+
+    if (getTouchData(x, y, gesture)) {
+        tm = millis();
+
+        NextPress = false; PrevPress = false; 
+        SelPress = false;  EscPress = false;
+        UpPress = false;   DownPress = false;
+        
+        // Map mã Gesture của CST816 sang Bruce OS
+        if (gesture == 0x01) {
+            PrevPress = true; // Vuốt lên
+        } else if (gesture == 0x02) {
+            NextPress = true; // Vuốt xuống
+        } else if (gesture == 0x05 || gesture == 0x0B) {
+            SelPress = true;  // Nhấp 1 lần hoặc nhấp đúp
+        } else if (gesture == 0x03 || gesture == 0x04) {
+            EscPress = true;  // Vuốt trái/phải
         }
 
-        Serial.printf("\nROT: Touch Pressed on x=%d, y=%d, rot=%d\n", t.x, t.y, bruceConfigPins.rotation);
+        if (!wakeUpScreen()) {
+            AnyKeyPress = true; 
+            return; 
+        }
 
-        if (!wakeUpScreen()) AnyKeyPress = true;
-        else return;
+        int mapped_x = tftWidth - x; 
+        int mapped_y = (tftHeight + 20) - y;
 
-        // Touch point global variable
-        touchPoint.x = t.x;
-        touchPoint.y = t.y;
+        touchPoint.x = mapped_x;
+        touchPoint.y = mapped_y;
         touchPoint.pressed = true;
         touchHeatMap(touchPoint);
-        tm = millis();
+        
+    } else {
+        touchPoint.pressed = false;
     }
-
-#endif
-#ifdef HAS_3_BUTTONS
-    bool upPressed = (digitalRead(UP_BTN) == LOW);
-    bool selPressed = (digitalRead(SEL_BTN) == LOW);
-    bool dwPressed = (digitalRead(DW_BTN) == LOW);
-
-    bool anyPressed = upPressed || selPressed || dwPressed;
-    if (anyPressed) tm = millis();
-    if (anyPressed && wakeUpScreen()) return;
-
-    AnyKeyPress = anyPressed;
-    PrevPress = upPressed;
-    EscPress = upPressed && dwPressed;
-    NextPress = dwPressed;
-    SelPress = selPressed;
 #endif
 }
 
-/*********************************************************************
-** Function: powerOff
-** location: mykeyboard.cpp
-** Turns off the device (or try to)
-**********************************************************************/
-void powerOff() {}
-
-/*********************************************************************
-** Function: checkReboot
-** location: mykeyboard.cpp
-** Btn logic to turnoff the device (name is odd btw)
-**********************************************************************/
+void powerOff() { digitalWrite(TFT_BL, LOW); }
 void checkReboot() {}

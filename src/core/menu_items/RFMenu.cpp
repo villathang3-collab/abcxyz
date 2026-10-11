@@ -53,11 +53,7 @@ void RFMenu::configMenu() {
 
     loopOptions(options, MENU_TYPE_SUBMENU, "RF Config");
 }
-void RFMenu::drawIconImg() {
-    drawImg(
-        *bruceConfig.themeFS(), bruceConfig.getThemeItemImg(bruceConfig.theme.paths.rf), 0, imgCenterY, true
-    );
-}
+
 void RFMenu::drawIcon(float scale) {
     clearIconArea();
     int radius = scale * 7;
@@ -141,4 +137,8 @@ void RFMenu::drawIcon(float scale) {
         bruceConfig.priColor,
         bruceConfig.bgColor
     );
+}
+
+void RFMenu::drawIconImg() {
+    // This space is intentionally left blank
 }

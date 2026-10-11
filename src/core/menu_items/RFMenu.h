@@ -11,6 +11,7 @@ public:
     void drawIcon(float scale);
     void drawIconImg();
     bool getTheme() { return bruceConfig.theme.rf; }
+    String themePath() { return bruceConfig.theme.paths.rf; }
 
 private:
     void configMenu(void);

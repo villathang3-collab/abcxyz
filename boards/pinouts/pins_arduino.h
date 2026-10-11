@@ -46,6 +46,6 @@
 #include "../ESP32-C5/pins_arduino.h"
 #elif XINGZHI_CUBE_S3
 #include "../xingzhi-cube-s3/pins_arduino.h"
-#elif BRUCE_FREENOVA
-#include "../freenova/pins_arduino.h"
+#elif ESP32_19
+#include "../esp32-19/pins_arduino.h"
 #endif

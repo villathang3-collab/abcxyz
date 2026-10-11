@@ -15,7 +15,7 @@ enum NRF24_MODE {
     NRF_MODE_DISABLED, // 0b00
     NRF_MODE_SPI,      // 0b01
     NRF_MODE_UART,     // 0b10
-    NRF_MODE_BOTH,      // 0b11
+    NRF_MODE_BOTH      // 0b11
 };
 #define CHECK_NRF_SPI(mode) (mode & NRF_MODE_SPI)
 #define CHECK_NRF_UART(mode) (mode & NRF_MODE_UART)

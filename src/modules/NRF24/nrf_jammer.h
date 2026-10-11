@@ -21,7 +21,7 @@ FLAFS:
     NRF24_SCK_PIN=-1  ; Set this pin accordingly
     NRF24_MISO_PIN=-1 ; Set this pin accordingly
 */
-void super_jammer();
+
 void nrf_jammer();
 void nrf_channel_jammer();
 void nrf_channel_hopper();
